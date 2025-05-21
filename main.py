@@ -1,9 +1,10 @@
-from functions_framework import cloud_event
+import functions_framework
 from google.events.cloud.firestore import DocumentEventData
 import base64
+from cloudevents.http import from_http
+import flask
 
-@cloud_event
-def multi_trigger_function(cloud_event):
+def multi_trigger_function_internal(cloud_event):
     print("=== EVENT RECEIVED ===")
     event_id = cloud_event["id"]
     event_type = cloud_event["type"]
@@ -38,3 +39,27 @@ def multi_trigger_function(cloud_event):
         decoded = base64.b64decode(message_data).decode('utf-8')
         print(f"Decoded Pub/Sub message: {decoded}")
         return
+
+@functions_framework.http
+def multi_trigger_function(request: flask.Request):
+    print("=== Incoming headers ===")
+    for header, value in request.headers.items():
+        print(f"{header}: {value}")
+    if "Ce-Type" in request.headers:
+        cloud_event = from_http(request.headers, request.get_data())
+        multi_trigger_function_internal(cloud_event)
+        return "Handled as CloudEvent", 200
+
+    # Otherwise, treat as regular HTTP
+    print(f"Payload: {request.get_json()}")
+    return "Handled as HTTP", 200
+
+@functions_framework.cloud_event
+def OLD_multi_trigger_function(cloud_event):
+    # HACK: Access the Flask request via Flask's thread-local
+    req = flask.request  # flask.request is global in context of a request
+    print("=== Incoming headers ===")
+    for header, value in req.headers.items():
+        print(f"{header}: {value}")
+    multi_trigger_function_internal(cloud_event)
+
